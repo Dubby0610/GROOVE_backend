@@ -12,8 +12,10 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["*", "https://groove-kappa.vercel.app"],
+    origin: ["*"],
     credentials: true,
+    methods: "*",
+    allowedHeaders: "*",
   })
 );
 
