@@ -31,8 +31,7 @@ app.use(
       "Authorization",
       "X-Requested-With",
       "Accept",
-      "Origin",
-      "Access-Control-Allow-Credentials"
+      "Origin"
     ],
   })
 );
