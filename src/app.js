@@ -12,7 +12,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: "*",
+    origin: ["https://localhsost:5173", "https://groove-kappa.vercel.app/"],
     credentials: true,
   })
 );
