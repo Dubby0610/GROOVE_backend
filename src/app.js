@@ -14,8 +14,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://groove-kappa.vercel.app",
-      "*"
+      "https://groove-kappa.vercel.app"
     ],
     credentials: true,
     methods: [
