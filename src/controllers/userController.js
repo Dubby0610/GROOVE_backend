@@ -30,7 +30,7 @@ export async function getSubscription(req, res) {
     const endDate = new Date(subscription.end_date);
     if (subscription.status === "expired" || now > endDate) {
       return res
-        .status(403)
+        .status(401)
         .json({ error: "Subscription inactive or expired" });
     }
 

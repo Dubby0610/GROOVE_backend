@@ -417,7 +417,7 @@ export const requireActiveSubscription = async (req, res, next) => {
   const now = new Date();
   const endDate = new Date(data.end_date);
   if (data.status !== "active" || now > endDate) {
-    return res.status(403).json({ error: "Subscription inactive or expired" });
+    return res.status(401).json({ error: "Subscription inactive or expired" });
   }
   next();
 };
