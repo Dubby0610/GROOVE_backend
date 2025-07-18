@@ -13,28 +13,6 @@ const app = express();
 app.use(
   cors({
     origin: "*",
-    // origin: [
-      // "*"
-      // "http://localhost:5173/",
-      // "https://groove-kappa.vercel.app/"
-    // ],
-    // credentials: true,
-    // methods: [
-    //   "GET",
-    //   "HEAD",
-    //   "PUT",
-    //   "PATCH",
-    //   "POST",
-    //   "DELETE",
-    //   "OPTIONS"
-    // ],
-    // allowedHeaders: [
-    //   "Content-Type",
-    //   "Authorization",
-    //   "X-Requested-With",
-    //   "Accept",
-    //   "Origin"
-    // ],
   })
 );
 

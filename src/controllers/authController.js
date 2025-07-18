@@ -6,6 +6,23 @@ import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
 dotenv.config();
 
+// Helper to get refresh token expiry
+function getRefreshTokenExpiry() {
+  const expiresIn = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
+  // Convert to timestamp
+  const now = new Date();
+  if (expiresIn.endsWith('d')) {
+    now.setDate(now.getDate() + parseInt(expiresIn));
+  } else if (expiresIn.endsWith('h')) {
+    now.setHours(now.getHours() + parseInt(expiresIn));
+  } else if (expiresIn.endsWith('m')) {
+    now.setMinutes(now.getMinutes() + parseInt(expiresIn));
+  } else {
+    now.setDate(now.getDate() + 7); // default 7 days
+  }
+  return now.toISOString();
+}
+
 export async function signup(req, res) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -32,10 +49,16 @@ export async function signup(req, res) {
     // Create profile
     await supabase.from("profiles").insert([{ user_id: user.id }]);
     // Tokens
-    const secret = process.env.JWT_SECRET || "default_secret";
-    if (!secret) return res.status(500).json({ error: "Missing JWT_SECRET" });
-    const accessToken = generateAccessToken({ id: user.id, secret, email });
-    const refreshToken = generateRefreshToken({ id: user.id, secret, email });
+    const accessToken = generateAccessToken({ id: user.id, email });
+    const refreshToken = generateRefreshToken({ id: user.id, email });
+    // Store refresh token in DB
+    await supabase.from("refresh_tokens").insert([
+      {
+        user_id: user.id,
+        token: refreshToken,
+        expires_at: getRefreshTokenExpiry(),
+      },
+    ]);
     res
       .status(201)
       .json({ accessToken, refreshToken, user: { id: user.id, email } });
@@ -64,11 +87,16 @@ export async function login(req, res) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
     // ... after validating user
-    const secret = process.env.JWT_SECRET || "default_secret";
-    if (!secret) return res.status(500).json({ error: "Missing JWT_SECRET" });
-
-    const accessToken = generateAccessToken({ id: user.id, secret, email });
-    const refreshToken = generateRefreshToken({ id: user.id, secret, email });
+    const accessToken = generateAccessToken({ id: user.id, email });
+    const refreshToken = generateRefreshToken({ id: user.id, email });
+    // Store refresh token in DB
+    await supabase.from("refresh_tokens").insert([
+      {
+        user_id: user.id,
+        token: refreshToken,
+        expires_at: getRefreshTokenExpiry(),
+      },
+    ]);
     res.json({ accessToken, refreshToken, user: { id: user.id, email } });
 
     // const token = jwt.sign({ id: user._id }, secret, { expiresIn: '1h' });
@@ -80,22 +108,54 @@ export async function login(req, res) {
 
 export async function refreshToken(req, res) {
   const { refreshToken } = req.body;
+  console.log(" log: ", refreshToken)
   if (!refreshToken) return res.status(401).json({ error: "No refresh token" });
-
   try {
-    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    // Optionally check if token is revoked/blacklisted here
-
-    // Issue new access token
-    const accessToken = jwt.sign(
-      { id: payload.id, email: payload.email },
-      process.env.JWT_ACCESS_SECRET,
-      { expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || "15m" }
-    );
-    res.json({ accessToken });
+    // Verify token signature
+    console.log("verification");
+    const secret = process.env.JWT_REFRESH_SECRET || 'default_secret';
+    const payload = jwt.verify(refreshToken, secret);
+    console.log("payload:", payload);
+    // Check token exists in DB and not expired
+    const { data: dbToken, error } = await supabase
+      .from("refresh_tokens")
+      .select("id, user_id, expires_at")
+      .eq("token", refreshToken)
+      .single();
+    if (error || !dbToken) {
+      return res.status(401).json({ error: "Refresh token not found or revoked" });
+    }
+    if (new Date(dbToken.expires_at) < new Date()) {
+      // Expired, delete from DB
+      await supabase.from("refresh_tokens").delete().eq("id", dbToken.id);
+      return res.status(401).json({ error: "Refresh token expired" });
+    }
+    // Rotate: delete old, issue new
+    await supabase.from("refresh_tokens").delete().eq("id", dbToken.id);
+    const newAccessToken = generateAccessToken({ id: payload.id, email: payload.email });
+    const newRefreshToken = generateRefreshToken({ id: payload.id, email: payload.email });
+    await supabase.from("refresh_tokens").insert([
+      {
+        user_id: payload.id,
+        token: newRefreshToken,
+        expires_at: getRefreshTokenExpiry(),
+      },
+    ]);
+    console.log(newAccessToken, newRefreshToken);
+    res.json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
   } catch (err) {
+    console.error("JWT verify error:", err);
     return res.status(401).json({ error: "Invalid refresh token" });
   }
+}
+
+export async function logout(req, res) {
+  // Accept refreshToken in body or cookie
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(400).json({ error: "No refresh token provided" });
+  // Remove from DB
+  await supabase.from("refresh_tokens").delete().eq("token", refreshToken);
+  res.json({ success: true });
 }
 
 export async function googleOAuth(req, res) {

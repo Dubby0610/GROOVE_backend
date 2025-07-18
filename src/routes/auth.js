@@ -30,6 +30,8 @@ router.post(
 
 router.post('/refresh', authController.refreshToken);
 
+// Add logout route
+router.post('/logout', authController.logout);
 // Placeholder for Google OAuth
 router.post('/google', authController.googleOAuth);
 

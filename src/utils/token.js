@@ -1,13 +1,17 @@
 import jwt from 'jsonwebtoken';
 
 export function generateAccessToken(payload) {
-  return jwt.sign(payload, process.env.JWT_ACCESS_SECRET || 'default_secret', {
-    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+  // Only allow id and email in payload
+  const { id, email } = payload;
+  return jwt.sign({ id, email }, process.env.JWT_ACCESS_SECRET || 'default_secret', {
+    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '10m',
   });
 }
 
 export function generateRefreshToken(payload) {
-  return jwt.sign(payload, process.env.JWT_REFRESH_SECRET || 'default_secret', {
+  // Only allow id and email in payload
+  const { id, email } = payload;
+  return jwt.sign({ id, email }, process.env.JWT_REFRESH_SECRET || 'default_secret', {
     expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   });
 }
