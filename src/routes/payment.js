@@ -18,4 +18,16 @@ router.get(
   paymentController.syncCustomerData
 );
 
+// Hourly plan helpers
+router.post(
+  "/update-remaining",
+  authenticateToken,
+  paymentController.updateRemainingTime
+);
+router.post(
+  "/cancel",
+  authenticateToken,
+  paymentController.cancelSubscription
+);
+
 export default router;

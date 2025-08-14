@@ -352,27 +352,39 @@ export const verifyPayment = async (req, res) => {
       });
     }
 
-    // Calculate subscription duration
-    let duration = 0;
-    if (plan === "oneday") duration = 1;
-    else if (plan === "onemonth") duration = 30;
-    else return res.status(400).json({ error: "Invalid plan" });
-
+    // New plans: onehour (remaining_time), oneday (start/end)
     const now = new Date();
-    const end_date = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000);
+    let insertPayload = {
+      user_id: req.user.id,
+      plan,
+      status: "active",
+      payment_intent_id: paymentIntentId,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (plan === "onehour") {
+      insertPayload = {
+        ...insertPayload,
+        start_date: null,
+        end_date: null,
+        remaining_time_seconds: 60 * 60,
+      };
+    } else if (plan === "oneday") {
+      const endDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      insertPayload = {
+        ...insertPayload,
+        start_date: now.toISOString(),
+        end_date: endDate.toISOString(),
+        remaining_time_seconds: null,
+      };
+    } else {
+      return res.status(400).json({ error: "Invalid plan" });
+    }
 
     // Insert subscription record
-    const { error: insertError } = await supabase.from("subscriptions").insert([
-      {
-        user_id: req.user.id,
-        plan,
-        status: "active",
-        start_date: now.toISOString(),
-        end_date: end_date.toISOString(),
-        payment_intent_id: paymentIntentId,
-        stripe_customer_id: customerId,
-      },
-    ]);
+    const { error: insertError } = await supabase
+      .from("subscriptions")
+      .insert([insertPayload]);
 
     if (insertError) {
       console.error("Error inserting subscription:", insertError);
@@ -405,7 +417,7 @@ export const requireActiveSubscription = async (req, res, next) => {
   const userId = req.user.id;
   const { data, error } = await supabase
     .from("subscriptions")
-    .select("status, end_date")
+    .select("status, end_date, plan, remaining_time_seconds")
     .eq("user_id", userId)
     .order("end_date", { ascending: false })
     .limit(1)
@@ -415,11 +427,88 @@ export const requireActiveSubscription = async (req, res, next) => {
     return res.status(403).json({ error: "No active subscription" });
 
   const now = new Date();
-  const endDate = new Date(data.end_date);
-  if (data.status !== "active" || now > endDate) {
-    return res.status(401).json({ error: "Subscription inactive or expired" });
+  if (data.plan === "onehour") {
+    if (data.status !== "active" || !data.remaining_time_seconds || data.remaining_time_seconds <= 0) {
+      return res.status(401).json({ error: "Subscription inactive or expired" });
+    }
+  } else {
+    const endDate = new Date(data.end_date);
+    if (data.status !== "active" || now > endDate) {
+      return res.status(401).json({ error: "Subscription inactive or expired" });
+    }
   }
   next();
+};
+
+// Decrement remaining time every N minutes for onehour plan
+export const updateRemainingTime = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const minutes = Math.max(1, Math.min(10, Number(req.body.minutes || 1)));
+
+    const { data: sub, error: subErr } = await supabase
+      .from("subscriptions")
+      .select("id, status, remaining_time_seconds, plan")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (subErr || !sub) return res.status(404).json({ error: "No subscription found" });
+    if (sub.plan !== "onehour") return res.status(400).json({ error: "Not an hourly subscription" });
+
+    const current = sub.remaining_time_seconds || 0;
+    let next = current - minutes * 60;
+    if (next < 0) next = 0;
+    const nextStatus = next === 0 ? "expired" : sub.status;
+
+    const { error: updErr } = await supabase
+      .from("subscriptions")
+      .update({ remaining_time_seconds: next, status: nextStatus, updated_at: new Date().toISOString() })
+      .eq("id", sub.id);
+
+    if (updErr) return res.status(500).json({ error: "Failed to update remaining time" });
+
+    return res.json({ remaining_time_seconds: next, status: nextStatus });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Internal error" });
+  }
+};
+
+export const cancelSubscription = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { data: sub, error: subErr } = await supabase
+      .from("subscriptions")
+      .select("id, stripe_subscription_id, plan, status")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (subErr || !sub) return res.status(404).json({ error: "No subscription found" });
+
+    if (sub.stripe_subscription_id) {
+      try {
+        await stripe.subscriptions.update(sub.stripe_subscription_id, { cancel_at_period_end: true });
+      } catch (e) {
+        console.warn("Stripe cancel warning:", e.message);
+      }
+    }
+
+    const { error: updErr } = await supabase
+      .from("subscriptions")
+      .update({ status: "canceled", updated_at: new Date().toISOString() })
+      .eq("id", sub.id);
+
+    if (updErr) return res.status(500).json({ error: "Failed to cancel subscription" });
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Internal error" });
+  }
 };
 
 // Helper function to get or create customer ID

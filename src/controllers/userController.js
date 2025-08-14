@@ -27,23 +27,23 @@ export async function getSubscription(req, res) {
     if (error || !subscription) return res.json({ status: "none" });
 
     const now = new Date();
-    const endDate = new Date(subscription.end_date);
-    if (subscription.status === "expired" || now > endDate) {
-      return res
-        .status(401)
-        .json({ error: "Subscription inactive or expired" });
-    }
-
-    if (subscription.status !== "expired" && endDate > now) {
+    if (subscription.plan === "onehour") {
+      const remaining = subscription.remaining_time_seconds || 0;
+      const active = subscription.status === "active" && remaining > 0;
       return res.json({
-        status: "active",
+        status: active ? "active" : "expired",
         plan: subscription.plan,
-        end_date: subscription.end_date,
+        remaining_time_seconds: remaining,
+        end_date: null,
       });
     }
+
+    const endDate = new Date(subscription.end_date);
+    const active = subscription.status === "active" && endDate > now;
     return res.json({
-      status: "expired",
+      status: active ? "active" : "expired",
       plan: subscription.plan,
+      start_date: subscription.start_date,
       end_date: subscription.end_date,
     });
   } catch (err) {

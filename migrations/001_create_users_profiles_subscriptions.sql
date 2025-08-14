@@ -19,13 +19,15 @@ CREATE TABLE IF NOT EXISTS profiles (
 CREATE TABLE IF NOT EXISTS subscriptions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references users(id) on delete cascade,
-  stripe_subscription_id text not null,
+  stripe_subscription_id text,
   plan text,
   status text,
   start_date timestamptz,
   end_date timestamptz,
+  -- New: remaining time for hourly plan (in seconds)
+  remaining_time_seconds integer,
   payment_intent_id text, -- for one-time payments
-  stripe_customer_id text, -- for Stripe integration
+  stripe_customer_id text, -- for Stripe integration (optional)
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
