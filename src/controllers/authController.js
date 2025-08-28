@@ -150,12 +150,47 @@ export async function refreshToken(req, res) {
 }
 
 export async function logout(req, res) {
-  // Accept refreshToken in body or cookie
-  const { refreshToken } = req.body;
-  if (!refreshToken) return res.status(400).json({ error: "No refresh token provided" });
-  // Remove from DB
-  await supabase.from("refresh_tokens").delete().eq("token", refreshToken);
-  res.json({ success: true });
+  try {
+    const { refreshToken, token: accessToken } = req.body;
+    
+    // If access token provided, extract user info and invalidate all their tokens
+    if (accessToken) {
+      try {
+        const secret = process.env.JWT_ACCESS_SECRET || 'default_secret';
+        const payload = jwt.verify(accessToken, secret);
+        
+        // Delete all refresh tokens for this user
+        await supabase
+          .from("refresh_tokens")
+          .delete()
+          .eq("user_id", payload.id);
+          
+        console.log(`Logged out user ${payload.id}, invalidated all tokens`);
+      } catch (error) {
+        console.warn("Invalid access token during logout:", error.message);
+        // Continue with logout even if token is invalid
+      }
+    }
+    
+    // If refresh token provided, invalidate it specifically
+    if (refreshToken) {
+      await supabase
+        .from("refresh_tokens")
+        .delete()
+        .eq("token", refreshToken);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Successfully logged out. All sessions have been terminated." 
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ 
+      error: "Failed to complete logout", 
+      details: error.message 
+    });
+  }
 }
 
 export async function googleOAuth(req, res) {

@@ -21,7 +21,7 @@ export async function getSubscription(req, res) {
       .from("subscriptions")
       .select("*")
       .eq("user_id", req.user.id)
-      .order("end_date", { ascending: false })
+      .order("end_date", { ascending: false, nullsFirst: true})
       .limit(1)
       .single();
     if (error || !subscription) return res.json({ status: "none" });
