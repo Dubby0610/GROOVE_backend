@@ -22,6 +22,9 @@ app.use(cookieParser());
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 app.use("/payment", paymentRoutes);
+app.use("/health", (req, res) => {
+  res.send("OK");
+});
 
 // Error handler
 app.use((err, req, res, next) => {
